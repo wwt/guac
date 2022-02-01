@@ -118,7 +118,7 @@ func (s *Stream) ReadSome() (instruction []byte, err error) {
 				case ',':
 					// keep going
 				default:
-					err = ErrServer.NewError("Element terminator of instruction was not ';' nor ',', twas " + string(terminator))
+					err = ErrServer.NewError("Element terminator of instruction was not ';' nor ','")
 					return
 				}
 			default:
