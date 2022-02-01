@@ -43,6 +43,41 @@ func TestInstructionReader_ReadSome(t *testing.T) {
 	}
 }
 
+func TestInstructionReader_ReadSome_Unicode(t *testing.T) {
+	conn := &fakeConn{
+		ToRead: []byte("4.copy,1.🚀;4.copy"),
+	}
+	stream := NewStream(conn, 1*time.Minute)
+
+	ins, err := stream.ReadSome()
+
+	if err != nil {
+		t.Error("Unexpected error", err)
+	}
+	if !bytes.Equal(ins, []byte("4.copy,1.🚀;")) {
+		t.Error("Unexpected bytes returned")
+	}
+	if !stream.Available() {
+		t.Error("Stream has more available but returned false")
+	}
+
+	// Read the rest of the fragmented instruction
+	n := copy(conn.ToRead, ",1.🚀;")
+	conn.ToRead = conn.ToRead[:n]
+	conn.HasRead = false
+	ins, err = stream.ReadSome()
+
+	if err != nil {
+		t.Error("Unexpected error", err)
+	}
+	if !bytes.Equal(ins, []byte("4.copy,1.🚀;")) {
+		t.Error("Unexpected bytes returned")
+	}
+	if stream.Available() {
+		t.Error("Stream thinks it has more available but doesn't")
+	}
+}
+
 func TestInstructionReader_Flush(t *testing.T) {
 	s := NewStream(&fakeConn{}, time.Second)
 	s.buffer = s.buffer[:4]

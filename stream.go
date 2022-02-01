@@ -25,13 +25,13 @@ type Stream struct {
 
 	// if more than a single instruction is read, the rest are buffered here
 	parseStart int
-	buffer     []byte
-	reset      []byte
+	buffer     []rune
+	reset      []rune
 }
 
 // NewStream creates a new stream
 func NewStream(conn net.Conn, timeout time.Duration) (ret *Stream) {
-	buffer := make([]byte, 0, MaxGuacMessage*3)
+	buffer := make([]rune, 0, MaxGuacMessage*3)
 	return &Stream{
 		conn:    conn,
 		timeout: timeout,
@@ -111,14 +111,14 @@ func (s *Stream) ReadSome() (instruction []byte, err error) {
 				// instruction.
 				switch terminator {
 				case ';':
-					instruction = s.buffer[0:i]
+					instruction = []byte(string(s.buffer[0:i]))
 					s.parseStart = 0
 					s.buffer = s.buffer[i:]
 					return
 				case ',':
 					// keep going
 				default:
-					err = ErrServer.NewError("Element terminator of instruction was not ';' nor ','")
+					err = ErrServer.NewError("Element terminator of instruction was not ';' nor ',', twas " + string(terminator))
 					return
 				}
 			default:
@@ -128,11 +128,8 @@ func (s *Stream) ReadSome() (instruction []byte, err error) {
 			}
 		}
 
-		if cap(s.buffer) < MaxGuacMessage {
-			s.Flush()
-		}
-
-		n, err = s.conn.Read(s.buffer[len(s.buffer):cap(s.buffer)])
+		buffer := make([]byte, 1024)
+		n, err = s.conn.Read(buffer)
 		if err != nil && n == 0 {
 			switch err.(type) {
 			case net.Error:
@@ -150,6 +147,13 @@ func (s *Stream) ReadSome() (instruction []byte, err error) {
 		if n == 0 {
 			err = ErrServer.NewError("read 0 bytes")
 		}
+		runes := []rune(string(buffer[:n]))
+
+		if cap(s.buffer)-len(s.buffer) < len(runes) {
+			s.Flush()
+		}
+
+		n = copy(s.buffer[len(s.buffer):cap(s.buffer)], runes)
 		// must reslice so len is changed
 		s.buffer = s.buffer[:len(s.buffer)+n]
 	}
