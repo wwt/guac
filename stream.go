@@ -10,7 +10,7 @@ import (
 
 const (
 	SocketTimeout  = 15 * time.Second
-	MaxGuacMessage = 8192
+	MaxGuacMessage = 8192 // TODO is this bytes or runes?
 )
 
 // Stream wraps the connection to Guacamole providing timeouts and reading
@@ -68,6 +68,7 @@ func (s *Stream) ReadSome() (instruction []byte, err error) {
 		return
 	}
 
+	buffer := make([]byte, MaxGuacMessage)
 	var n int
 	// While we're blocking, or input is available
 	for {
@@ -128,7 +129,6 @@ func (s *Stream) ReadSome() (instruction []byte, err error) {
 			}
 		}
 
-		buffer := make([]byte, 1024)
 		n, err = s.conn.Read(buffer)
 		if err != nil && n == 0 {
 			switch err.(type) {
