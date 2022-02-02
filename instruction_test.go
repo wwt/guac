@@ -23,7 +23,7 @@ func TestParse(t *testing.T) {
 
 		if _, err := Parse(invalid); err == nil {
 			t.Fatal("expected error")
-		} else if err.Error() != "guac.Parse: wrong pattern instruction." {
+		} else if err.Error() != "guac.Parse: wrong pattern instruction" {
 			t.Fatalf("unexpected error: %#v", err.Error())
 		}
 	})
