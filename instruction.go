@@ -1,6 +1,7 @@
 package guac
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 )
@@ -39,7 +40,9 @@ func (i *Instruction) Byte() []byte {
 	return []byte(i.String())
 }
 
-func Parse(data []byte) (*Instruction, error) {
+func Parse(buf []byte) (*Instruction, error) {
+	data := []rune(string(buf))
+
 	elementStart := 0
 
 	// Build list of elements
@@ -56,24 +59,33 @@ func Parse(data []byte) (*Instruction, error) {
 		// read() is required to return a complete instruction. If it does
 		// not, this is a severe internal error.
 		if lengthEnd == -1 {
-			return nil, ErrServer.NewError("ReadSome returned incomplete instruction.")
+			return nil, errors.New("guac.Parse: incomplete instruction")
 		}
 
 		// Parse length
 		length, e := strconv.Atoi(string(data[elementStart:lengthEnd]))
 		if e != nil {
-			return nil, ErrServer.NewError("ReadSome returned wrong pattern instruction.", e.Error())
+			return nil, errors.New("guac.Parse: wrong pattern instruction")
 		}
 
 		// Parse element from just after period
 		elementStart = lengthEnd + 1
-		element := string(data[elementStart : elementStart+length])
+		elementEnd := elementStart + length
+		if elementEnd >= len(data) {
+			return nil, errors.New("guac.Parse: invalid length (corrupted instruction?)")
+		}
+
+		element := string(data[elementStart:elementEnd])
 
 		// Append element to list of elements
 		elements = append(elements, element)
 
 		// ReadSome terminator after element
 		elementStart += length
+
+		if elementStart >= len(data) {
+			return nil, errors.New("guac.Parse: invalid length (corrupted instruction?)")
+		}
 		terminator := data[elementStart]
 
 		// Continue reading instructions after terminator
