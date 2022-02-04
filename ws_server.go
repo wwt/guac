@@ -2,7 +2,6 @@ package guac
 
 import (
 	"bytes"
-	"io"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -22,7 +21,7 @@ type WebsocketServer struct {
 	OnDisconnect func(string, *http.Request, Tunnel)
 
 	// OnConnectWs is an optional callback called when a websocket connects.
-	OnConnectWs func(string, *websocket.Conn, *http.Request)
+	OnConnectWs func(string, *websocket.Conn, *http.Request, Tunnel)
 	// OnDisconnectWs is an optional callback called when the websocket disconnects.
 	OnDisconnectWs func(string, *websocket.Conn, *http.Request, Tunnel)
 }
@@ -92,11 +91,8 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.OnConnect(id, r)
 	}
 	if s.OnConnectWs != nil {
-		s.OnConnectWs(id, ws, r)
+		s.OnConnectWs(id, ws, r, tunnel)
 	}
-
-	writer := tunnel.AcquireWriter()
-	reader := tunnel.AcquireReader()
 
 	if s.OnDisconnect != nil {
 		defer s.OnDisconnect(id, r, tunnel)
@@ -105,11 +101,8 @@ func (s *WebsocketServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer s.OnDisconnectWs(id, ws, r, tunnel)
 	}
 
-	defer tunnel.ReleaseWriter()
-	defer tunnel.ReleaseReader()
-
-	go wsToGuacd(ws, writer)
-	guacdToWs(ws, reader)
+	go wsToGuacd(ws, tunnel)
+	guacdToWs(ws, tunnel)
 }
 
 // MessageReader wraps a websocket connection and only permits Reading
@@ -118,7 +111,7 @@ type MessageReader interface {
 	ReadMessage() (int, []byte, error)
 }
 
-func wsToGuacd(ws MessageReader, guacd io.Writer) {
+func wsToGuacd(ws MessageReader, tunnel Tunnel) {
 	for {
 		_, data, err := ws.ReadMessage()
 		if err != nil {
@@ -130,11 +123,14 @@ func wsToGuacd(ws MessageReader, guacd io.Writer) {
 			// messages starting with the InternalDataOpcode are never sent to guacd
 			continue
 		}
-
+		guacd := tunnel.AcquireWriter()
 		if _, err = guacd.Write(data); err != nil {
 			logrus.Traceln("Failed writing to guacd", err)
+			tunnel.ReleaseWriter()
+
 			return
 		}
+		tunnel.ReleaseWriter()
 	}
 }
 
@@ -144,11 +140,20 @@ type MessageWriter interface {
 	WriteMessage(int, []byte) error
 }
 
-func guacdToWs(ws MessageWriter, guacd InstructionReader) {
+func guacdToWs(ws MessageWriter, tunnel Tunnel) {
 	buf := bytes.NewBuffer(make([]byte, 0, MaxGuacMessage*2))
 
+	uuid := NewInstruction(InternalDataOpcode, tunnel.ConnectionID())
+	if err := ws.WriteMessage(1, uuid.Byte()); err != nil {
+		logrus.Traceln("Failed to send uuid to ws", err)
+		return
+	}
+
 	for {
+		guacd := tunnel.AcquireReader()
 		ins, err := guacd.ReadSome()
+		tunnel.ReleaseReader()
+
 		if err != nil {
 			logrus.Traceln("Error reading from guacd", err)
 			return
@@ -164,8 +169,12 @@ func guacdToWs(ws MessageWriter, guacd InstructionReader) {
 			return
 		}
 
+		guacd = tunnel.AcquireReader()
+		avail := guacd.Available()
+		tunnel.ReleaseReader()
+
 		// if the buffer has more data in it or we've reached the max buffer size, send the data and reset
-		if !guacd.Available() || buf.Len() >= MaxGuacMessage {
+		if !avail || buf.Len() >= MaxGuacMessage {
 			if err = ws.WriteMessage(1, buf.Bytes()); err != nil {
 				if err == websocket.ErrCloseSent {
 					return

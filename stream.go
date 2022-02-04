@@ -2,14 +2,17 @@ package guac
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
+var _ io.Writer = (*Stream)(nil)
+
 const (
-	SocketTimeout  = 15 * time.Second
+	SocketTimeout  = 60 * time.Second
 	MaxGuacMessage = 8192 // TODO is this bytes or runes?
 )
 

@@ -2,9 +2,16 @@ package guac
 
 import (
 	"fmt"
-	"github.com/google/uuid"
 	"io"
+
+	"github.com/google/uuid"
 )
+
+// Ensure SimpleTunnel implements the Tunnel interface
+var _ Tunnel = (*SimpleTunnel)(nil)
+
+// // Ensure InstructionReader implements the InstructionReader interface
+var _ InstructionReader = (*FilteredGuacamoleReader)(nil)
 
 // The Guacamole protocol instruction Opcode reserved for arbitrary
 // internal use by tunnel implementations. The value of this Opcode is
@@ -115,4 +122,50 @@ func (t *SimpleTunnel) Close() (err error) {
 // GetUUID returns the tunnel's UUID
 func (t *SimpleTunnel) GetUUID() string {
 	return t.uuid.String()
+}
+
+type FilteredGuacamoleReader struct {
+	reader InstructionReader
+	filter Filter
+}
+
+func NewFilteredGuacamoleReader(reader InstructionReader, filter Filter) *FilteredGuacamoleReader {
+	return &FilteredGuacamoleReader{reader: reader, filter: filter}
+}
+
+func (r *FilteredGuacamoleReader) Available() bool {
+	return r.reader.Available()
+}
+
+func (r *FilteredGuacamoleReader) Flush() {
+	r.reader.Flush()
+}
+
+// ReadOne takes an instruction from the stream and parses it into an Instruction
+func (r *FilteredGuacamoleReader) ReadOne() (instruction *Instruction, err error) {
+	instructionBuffer, err := r.reader.ReadSome()
+	if err != nil {
+		return
+	}
+
+	return Parse(instructionBuffer)
+}
+
+func (r *FilteredGuacamoleReader) ReadSome() ([]byte, error) {
+	for {
+		unfilteredInstruction, err := r.ReadOne()
+		if err != nil {
+			return nil, err
+		}
+
+		filteredInstruction, err := r.filter.Filter(unfilteredInstruction)
+		if err != nil {
+			return nil, err
+		}
+
+		// Continue reading and filtering until no instructions are dropped
+		if filteredInstruction != nil {
+			return filteredInstruction.Byte(), err
+		}
+	}
 }

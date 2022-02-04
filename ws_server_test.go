@@ -23,7 +23,7 @@ func TestWebsocketServer_guacdToWs(t *testing.T) {
 	conn := &fakeConn{
 		ToRead: expected,
 	}
-	guac := NewStream(conn, time.Minute)
+	guac := NewSimpleTunnel(NewStream(conn, time.Minute))
 
 	guacdToWs(msgWriter, guac)
 
