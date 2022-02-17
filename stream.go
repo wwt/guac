@@ -2,19 +2,18 @@ package guac
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
-var _ io.Writer = (*Stream)(nil)
-
 const (
-	SocketTimeout  = 60 * time.Second
+	SocketTimeout  = 120 * time.Second
 	MaxGuacMessage = 8192 // TODO is this bytes or runes?
 )
+
+var _ InstructionReader = (*Stream)(nil)
 
 // Stream wraps the connection to Guacamole providing timeouts and reading
 // a single instruction at a time (since returning partial instructions

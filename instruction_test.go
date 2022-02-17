@@ -68,3 +68,43 @@ func TestReadOne(t *testing.T) {
 		t.Error("Unexpected", ins.String())
 	}
 }
+
+var _ Filter = (*dropFilter)(nil)
+
+// dropFilter drops all the instructions defined in drop
+type dropFilter struct {
+	Drop []string
+}
+
+func (f *dropFilter) Filter(i *Instruction) (*Instruction, error) {
+	for _, v := range f.Drop {
+		if v == i.Opcode {
+			return nil, nil
+		}
+	}
+
+	return i, nil
+}
+
+func TestFilteredInstructionReader(t *testing.T) {
+	t.Run("OK", func(t *testing.T) {
+		f := &dropFilter{Drop: []string{"select"}}
+
+		s := NewStream(&fakeConn{
+			ToRead: []byte(`6.select,2.hi,5.hello,4.asdf;6.teston,2.hi,5.hello,4.asdf;`),
+		}, time.Minute)
+
+		fi := NewFilteredInstructionReader(s, f)
+
+		result, err := fi.ReadSome()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got, want := string(result), "6.teston,2.hi,5.hello,4.asdf;"; got != want {
+			t.Fatalf("Result=%v, want %v", got, want)
+		}
+	})
+
+	// Won't test malformed input, because that's already tested on Stream
+}

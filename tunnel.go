@@ -10,7 +10,7 @@ import (
 // Ensure SimpleTunnel implements the Tunnel interface
 var _ Tunnel = (*SimpleTunnel)(nil)
 
-// // Ensure InstructionReader implements the InstructionReader interface
+// Ensure InstructionReader implements the InstructionReader interface
 var _ InstructionReader = (*FilteredGuacamoleReader)(nil)
 
 // The Guacamole protocol instruction Opcode reserved for arbitrary
@@ -125,25 +125,17 @@ func (t *SimpleTunnel) GetUUID() string {
 }
 
 type FilteredGuacamoleReader struct {
-	reader InstructionReader
+	InstructionReader
 	filter Filter
 }
 
 func NewFilteredGuacamoleReader(reader InstructionReader, filter Filter) *FilteredGuacamoleReader {
-	return &FilteredGuacamoleReader{reader: reader, filter: filter}
-}
-
-func (r *FilteredGuacamoleReader) Available() bool {
-	return r.reader.Available()
-}
-
-func (r *FilteredGuacamoleReader) Flush() {
-	r.reader.Flush()
+	return &FilteredGuacamoleReader{reader, filter}
 }
 
 // ReadOne takes an instruction from the stream and parses it into an Instruction
 func (r *FilteredGuacamoleReader) ReadOne() (instruction *Instruction, err error) {
-	instructionBuffer, err := r.reader.ReadSome()
+	instructionBuffer, err := r.InstructionReader.ReadSome()
 	if err != nil {
 		return
 	}
