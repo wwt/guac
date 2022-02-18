@@ -9,9 +9,11 @@ import (
 )
 
 const (
-	SocketTimeout  = 15 * time.Second
+	SocketTimeout  = 120 * time.Second
 	MaxGuacMessage = 8192 // TODO is this bytes or runes?
 )
+
+var _ InstructionReader = (*Stream)(nil)
 
 // Stream wraps the connection to Guacamole providing timeouts and reading
 // a single instruction at a time (since returning partial instructions

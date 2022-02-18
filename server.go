@@ -2,10 +2,12 @@ package guac
 
 import (
 	"fmt"
-	logger "github.com/sirupsen/logrus"
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/gorilla/mux"
+	logger "github.com/sirupsen/logrus"
 )
 
 const (
@@ -60,21 +62,27 @@ func (s *Server) sendError(response http.ResponseWriter, guacStatus Status, mess
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	err := s.handleTunnelRequestCore(w, r)
-	if err == nil {
-		return
-	}
-	guacErr := err.(*ErrGuac)
-	switch guacErr.Kind {
-	case ErrClient:
-		logger.Warn("HTTP tunnel request rejected: ", err.Error())
-		s.sendError(w, guacErr.Status, err.Error())
-	default:
-		logger.Error("HTTP tunnel request failed: ", err.Error())
-		logger.Debug("Internal error in HTTP tunnel.", err)
-		s.sendError(w, guacErr.Status, "Internal server error.")
-	}
-	return
+	m := mux.NewRouter()
+
+	m.HandleFunc("/debug", func(rw http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("CIAOOOOOOO"))
+	})
+
+	m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		err := s.handleTunnelRequestCore(w, r)
+		guacErr := err.(*ErrGuac)
+		switch guacErr.Kind {
+		case ErrClient:
+			logger.Warn("HTTP tunnel request rejected: ", err.Error())
+			s.sendError(w, guacErr.Status, err.Error())
+		default:
+			logger.Error("HTTP tunnel request failed: ", err.Error())
+			logger.Debug("Internal error in HTTP tunnel.", err)
+			s.sendError(w, guacErr.Status, "Internal server error.")
+		}
+	})
+
+	m.ServeHTTP(w, r)
 }
 
 func (s *Server) handleTunnelRequestCore(response http.ResponseWriter, request *http.Request) (err error) {

@@ -111,3 +111,44 @@ func ReadOne(stream *Stream) (instruction *Instruction, err error) {
 
 	return Parse(instructionBuffer)
 }
+
+// FilteredInstructionReader is a struct that provides a filtered
+// InstructionReader and handles instructions through a filter.
+type FilteredInstructionReader struct {
+	InstructionReader
+
+	Filter
+}
+
+func NewFilteredInstructionReader(r InstructionReader, filter Filter) InstructionReader {
+	return &FilteredInstructionReader{r, filter}
+}
+
+func (r *FilteredInstructionReader) ReadSome() ([]byte, error) {
+	for {
+		unfilteredInstruction, err := readOne(r.InstructionReader)
+		if err != nil {
+			return nil, err
+		}
+
+		filteredInstruction, err := r.Filter.Filter(unfilteredInstruction)
+		if err != nil {
+			return nil, err
+		}
+
+		// Continue reading and filtering until no instructions are dropped
+		if filteredInstruction != nil {
+			return filteredInstruction.Byte(), err
+		}
+	}
+}
+
+// readOne takes an instruction from the stream and parses it into an Instruction
+func readOne(r InstructionReader) (instruction *Instruction, err error) {
+	instructionBuffer, err := r.ReadSome()
+	if err != nil {
+		return
+	}
+
+	return Parse(instructionBuffer)
+}

@@ -9,46 +9,98 @@ import (
 	"net/url"
 	"strconv"
 
+	"github.com/gorilla/mux"
+	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 	"github.com/wwt/guac"
 )
 
+var tunnels map[string]guac.Tunnel
+
 func main() {
 	logrus.SetLevel(logrus.DebugLevel)
 
-	servlet := guac.NewServer(DemoDoConnect)
+	// servlet := guac.NewServer(DemoDoConnect)
 	wsServer := guac.NewWebsocketServer(DemoDoConnect)
+	wsServerIntercept := guac.NewWebsocketServer(DemoDoConnectWithIntercept)
 
 	sessions := guac.NewMemorySessionStore()
-	wsServer.OnConnect = sessions.Add
-	wsServer.OnDisconnect = sessions.Delete
+	wsServerIntercept.OnConnect = sessions.Add
+	wsServerIntercept.OnDisconnect = sessions.Delete
 
-	mux := http.NewServeMux()
-	mux.Handle("/tunnel", servlet)
-	mux.Handle("/tunnel/", servlet)
-	mux.Handle("/websocket-tunnel", wsServer)
-	mux.HandleFunc("/sessions/", func(w http.ResponseWriter, r *http.Request) {
+	tunnels = make(map[string]guac.Tunnel)
+
+	wsServerIntercept.OnConnectWs = func(s string, _ *websocket.Conn, _ *http.Request, t guac.Tunnel) {
+		tunnels[s] = t
+	}
+
+	wsServerIntercept.OnDisconnectWs = func(s string, _ *websocket.Conn, _ *http.Request, _ guac.Tunnel) {
+		delete(tunnels, s)
+	}
+
+	m := mux.NewRouter()
+
+	// m.Handle("/", servlet)
+	m.Handle("/websocket-tunnel", wsServer)
+	m.Handle("/websocket-tunnel-intercept", wsServerIntercept)
+
+	m.HandleFunc("/api/session/tunnels/{tunnel}/streams/{stream}/{file}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Disposition", "attachment")
+		t := mux.Vars(r)["tunnel"]
+
+		tunnel, ok := tunnels[t]
+		if !ok {
+			w.Write([]byte("KO"))
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		sit, ok := tunnel.(*guac.UserTunnel)
+		if !ok {
+			w.Write([]byte("Not supported"))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		stream := mux.Vars(r)["stream"]
+
+		if err := sit.InterceptOutputStream(stream, w); err != nil {
+			w.Write([]byte("KO Intercepting output stream"))
+		}
+	}).Methods("GET")
+
+	m.HandleFunc("/api/session/tunnels/{tunnel}/streams/{stream}/{file}", func(w http.ResponseWriter, r *http.Request) {
+		t := mux.Vars(r)["tunnel"]
+		tunnel, ok := tunnels[t]
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("KO"))
+			return
+		}
+
+		sit, ok := tunnel.(*guac.UserTunnel)
+		if !ok {
+			w.Write([]byte("Not supported"))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		stream := mux.Vars(r)["stream"]
+
+		if err := sit.InterceptInputStream(stream, r.Body); err != nil {
+			w.Write([]byte("KO intercepting input stream"))
+		}
+	}).Methods("POST")
+
+	m.HandleFunc("/api/session/tunnels", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		sessions.RLock()
-		defer sessions.RUnlock()
-
-		type ConnIds struct {
-			Uuid string `json:"uuid"`
-			Num  int    `json:"num"`
+		t := []string{}
+		for tun := range tunnels {
+			t = append(t, tun)
 		}
 
-		connIds := make([]*ConnIds, len(sessions.ConnIds))
-
-		i := 0
-		for id, num := range sessions.ConnIds {
-			connIds[i] = &ConnIds{
-				Uuid: id,
-				Num:  num,
-			}
-		}
-
-		if err := json.NewEncoder(w).Encode(connIds); err != nil {
+		if err := json.NewEncoder(w).Encode(t); err != nil {
 			logrus.Error(err)
 		}
 	})
@@ -57,7 +109,7 @@ func main() {
 
 	s := &http.Server{
 		Addr:           "0.0.0.0:4567",
-		Handler:        mux,
+		Handler:        m,
 		ReadTimeout:    guac.SocketTimeout,
 		WriteTimeout:   guac.SocketTimeout,
 		MaxHeaderBytes: 1 << 20,
@@ -69,7 +121,7 @@ func main() {
 }
 
 // DemoDoConnect creates the tunnel to the remote machine (via guacd)
-func DemoDoConnect(request *http.Request) (guac.Tunnel, error) {
+func DemoDoConnect(request *http.Request) (_ guac.Tunnel, err error) {
 	config := guac.NewGuacamoleConfiguration()
 
 	var query url.Values
@@ -93,12 +145,10 @@ func DemoDoConnect(request *http.Request) (guac.Tunnel, error) {
 	}
 
 	config.Protocol = query.Get("scheme")
-	config.Parameters = map[string]string{}
 	for k, v := range query {
 		config.Parameters[k] = v[0]
 	}
 
-	var err error
 	if query.Get("width") != "" {
 		config.OptimalScreenHeight, err = strconv.Atoi(query.Get("width"))
 		if err != nil || config.OptimalScreenHeight == 0 {
@@ -117,6 +167,10 @@ func DemoDoConnect(request *http.Request) (guac.Tunnel, error) {
 
 	logrus.Debug("Connecting to guacd")
 	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:4822")
+	if err != nil {
+		logrus.Errorln("error while resolving 127.0.0.1")
+		return nil, err
+	}
 
 	conn, err := net.DialTCP("tcp", nil, addr)
 	if err != nil {
@@ -130,11 +184,23 @@ func DemoDoConnect(request *http.Request) (guac.Tunnel, error) {
 	if request.URL.Query().Get("uuid") != "" {
 		config.ConnectionID = request.URL.Query().Get("uuid")
 	}
+
 	logrus.Debugf("Starting handshake with %#v", config)
 	err = stream.Handshake(config)
 	if err != nil {
 		return nil, err
 	}
 	logrus.Debug("Socket configured")
+
 	return guac.NewSimpleTunnel(stream), nil
+}
+
+// DemoDoConnectWithIntercept showcases a use for intercepting streams
+func DemoDoConnectWithIntercept(r *http.Request) (guac.Tunnel, error) {
+	t, err := DemoDoConnect(r)
+	if err != nil {
+		return nil, err
+	}
+
+	return guac.NewUserTunnel(t), nil
 }

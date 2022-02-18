@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
@@ -98,12 +99,16 @@ func TestInstructionReader_Flush(t *testing.T) {
 }
 
 type fakeConn struct {
+	lock    sync.Mutex
 	ToRead  []byte
+	ToWrite []byte
 	HasRead bool
 	Closed  bool
 }
 
 func (f *fakeConn) Read(b []byte) (n int, err error) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
 	if f.HasRead {
 		return 0, io.EOF
 	} else {
@@ -113,7 +118,11 @@ func (f *fakeConn) Read(b []byte) (n int, err error) {
 }
 
 func (f *fakeConn) Write(b []byte) (n int, err error) {
-	return 0, nil
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	f.ToWrite = b
+	return len(b), nil
 }
 
 func (f *fakeConn) Close() error {
