@@ -121,7 +121,7 @@ func (f *fakeConn) Write(b []byte) (n int, err error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	f.ToWrite = append(f.ToWrite, b...)
+	f.ToWrite = b
 	return len(b), nil
 }
 
