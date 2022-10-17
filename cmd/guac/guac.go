@@ -60,7 +60,7 @@ func main() {
 		}
 	})
 
-	logrus.Println("Serving on http://127.0.0.1:4567")
+	logrus.Println("Serving on http://0.0.0.0:4567")
 
 	s := &http.Server{
 		Addr:           "0.0.0.0:4567",
