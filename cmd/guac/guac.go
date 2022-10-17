@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -13,7 +14,13 @@ import (
 	"github.com/wwt/guac"
 )
 
+var (
+	guacdAddrFlg = flag.String("guacd-address", "127.0.0.1:4822", "Address and port of guacd in the format '127.0.0.1:4822'")
+)
+
 func main() {
+	flag.Parse()
+
 	logrus.SetLevel(logrus.DebugLevel)
 
 	servlet := guac.NewServer(DemoDoConnect)
@@ -116,7 +123,11 @@ func DemoDoConnect(request *http.Request) (guac.Tunnel, error) {
 	config.AudioMimetypes = []string{"audio/L16", "rate=44100", "channels=2"}
 
 	logrus.Debug("Connecting to guacd")
-	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:4822")
+	addr, err := net.ResolveTCPAddr("tcp", *guacdAddrFlg)
+	if err != nil {
+		logrus.Errorln("error resolving guacd address", err)
+		return nil, err
+	}
 
 	conn, err := net.DialTCP("tcp", nil, addr)
 	if err != nil {
