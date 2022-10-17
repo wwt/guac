@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -82,7 +82,7 @@ func DemoDoConnect(request *http.Request) (guac.Tunnel, error) {
 	var query url.Values
 	if request.URL.RawQuery == "connect" {
 		// http tunnel uses the body to pass parameters
-		data, err := ioutil.ReadAll(request.Body)
+		data, err := io.ReadAll(request.Body)
 		if err != nil {
 			logrus.Error("Failed to read body ", err)
 			return nil, err
