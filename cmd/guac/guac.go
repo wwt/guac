@@ -141,7 +141,10 @@ func DemoDoConnect(request *http.Request) (guac.Tunnel, error) {
 	if request.URL.Query().Get("uuid") != "" {
 		config.ConnectionID = request.URL.Query().Get("uuid")
 	}
-	logrus.Debugf("Starting handshake with %#v", config)
+
+	sanitisedCfg := config
+	sanitisedCfg.Parameters["password"] = "********"
+	logrus.Debugf("Starting handshake with %#v", sanitisedCfg)
 	err = stream.Handshake(config)
 	if err != nil {
 		return nil, err
