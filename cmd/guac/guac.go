@@ -1,8 +1,9 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
-	"fmt"
+	"flag"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -13,8 +14,23 @@ import (
 	"github.com/wwt/guac"
 )
 
+var (
+	certPthFlg    = flag.String("certfile-path", "", "Full path to the certificate file for a secure server")
+	certKeyPthFlg = flag.String("keyfile-path", "", "Full path to the key file for a secure server")
+)
+
 func main() {
+	flag.Parse()
+
 	logrus.SetLevel(logrus.DebugLevel)
+
+	if *certPthFlg != "" && *certKeyPthFlg == "" {
+		logrus.Fatal("You must specify a path to the certificate keyfile")
+	}
+
+	if *certPthFlg == "" && *certKeyPthFlg != "" {
+		logrus.Fatal("You must specify a path to the certificate file")
+	}
 
 	servlet := guac.NewServer(DemoDoConnect)
 	wsServer := guac.NewWebsocketServer(DemoDoConnect)
@@ -53,7 +69,21 @@ func main() {
 		}
 	})
 
-	logrus.Println("Serving on http://127.0.0.1:4567")
+	tlsCfg := tls.Config{}
+	if *certPthFlg != "" {
+		cert, err := tls.LoadX509KeyPair(*certPthFlg, *certKeyPthFlg)
+		if err != nil {
+			logrus.Fatalf("Unable to load certificate keypair: %s\n", err)
+		}
+
+		tlsCfg.MinVersion = tls.VersionTLS13
+		tlsCfg.Certificates = []tls.Certificate{cert}
+		tlsCfg.CurvePreferences = []tls.CurveID{
+			tls.X25519,
+			tls.CurveP256,
+			tls.CurveP384,
+		}
+	}
 
 	s := &http.Server{
 		Addr:           "0.0.0.0:4567",
@@ -61,10 +91,23 @@ func main() {
 		ReadTimeout:    guac.SocketTimeout,
 		WriteTimeout:   guac.SocketTimeout,
 		MaxHeaderBytes: 1 << 20,
+		TLSConfig:      &tlsCfg,
 	}
-	err := s.ListenAndServe()
-	if err != nil {
-		fmt.Println(err)
+
+	if *certPthFlg != "" {
+		logrus.Println("Serving on https://0.0.0.0:4567")
+
+		err := s.ListenAndServeTLS("", "")
+		if err != nil {
+			logrus.Fatal(err)
+		}
+	} else {
+		logrus.Println("Serving on http://0.0.0.0:4567")
+
+		err := s.ListenAndServe()
+		if err != nil {
+			logrus.Fatal(err)
+		}
 	}
 }
 
