@@ -1,6 +1,6 @@
 # guac
 
-A port of the [Apache Guacamole client](https://github.com/apache/guacamole-client) to Go. 
+A port of the [Apache Guacamole client](https://github.com/apache/guacamole-client) to Go.
 
 Apache Guacamole provides access to your desktop using remote desktop protocols in your web browser without any plugins.
 
@@ -22,7 +22,12 @@ Next run the example main:
 go run cmd/guac/guac.go
 ```
 
-Now you can connect with [the example Vue app](https://github.com/wwt/guac-vue)
+Now you can connect with [the example Vue app](https://github.com/wwt/guac-vue).  By default guac will try to connect to a guacd instance at `127.0.0.1:4822`.  If you need to configure something different, you can do so by configuring environment variables; see the configurable parameters below.
+
+## Configurable parameters
+| Environment Variable | Description                                     | Default Value  | Required? |
+| -------------------- | ----------------------------------------------- | -------------- | ----------|
+| `GUACD_ADDRESS`      | The address and port that guacd is listening on | 127.0.0.1:4822 | No        |
 
 ## Acknowledgements
 

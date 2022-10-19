@@ -3,18 +3,27 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 
 	"github.com/sirupsen/logrus"
 	"github.com/wwt/guac"
 )
 
+var (
+	guacdAddr = "127.0.0.1:4822"
+)
+
 func main() {
 	logrus.SetLevel(logrus.DebugLevel)
+
+	if os.Getenv("GUACD_ADDRESS") != "" {
+		guacdAddr = os.Getenv("GUACD_ADDRESS")
+	}
 
 	servlet := guac.NewServer(DemoDoConnect)
 	wsServer := guac.NewWebsocketServer(DemoDoConnect)
@@ -53,7 +62,7 @@ func main() {
 		}
 	})
 
-	logrus.Println("Serving on http://127.0.0.1:4567")
+	logrus.Println("Serving on http://0.0.0.0:4567")
 
 	s := &http.Server{
 		Addr:           "0.0.0.0:4567",
@@ -75,7 +84,7 @@ func DemoDoConnect(request *http.Request) (guac.Tunnel, error) {
 	var query url.Values
 	if request.URL.RawQuery == "connect" {
 		// http tunnel uses the body to pass parameters
-		data, err := ioutil.ReadAll(request.Body)
+		data, err := io.ReadAll(request.Body)
 		if err != nil {
 			logrus.Error("Failed to read body ", err)
 			return nil, err
@@ -116,7 +125,11 @@ func DemoDoConnect(request *http.Request) (guac.Tunnel, error) {
 	config.AudioMimetypes = []string{"audio/L16", "rate=44100", "channels=2"}
 
 	logrus.Debug("Connecting to guacd")
-	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:4822")
+	addr, err := net.ResolveTCPAddr("tcp", guacdAddr)
+	if err != nil {
+		logrus.Errorln("error resolving guacd address", err)
+		return nil, err
+	}
 
 	conn, err := net.DialTCP("tcp", nil, addr)
 	if err != nil {
@@ -130,7 +143,10 @@ func DemoDoConnect(request *http.Request) (guac.Tunnel, error) {
 	if request.URL.Query().Get("uuid") != "" {
 		config.ConnectionID = request.URL.Query().Get("uuid")
 	}
-	logrus.Debugf("Starting handshake with %#v", config)
+
+	sanitisedCfg := config
+	sanitisedCfg.Parameters["password"] = "********"
+	logrus.Debugf("Starting handshake with %#v", sanitisedCfg)
 	err = stream.Handshake(config)
 	if err != nil {
 		return nil, err
