@@ -15,13 +15,12 @@ import (
 )
 
 var (
-	guacdAddr string
+	guacdAddr = "127.0.0.1:4822"
 )
 
 func main() {
 	logrus.SetLevel(logrus.DebugLevel)
 
-	guacdAddr = "127.0.0.1:4822"
 	if os.Getenv("GUACD_ADDRESS") != "" {
 		guacdAddr = os.Getenv("GUACD_ADDRESS")
 	}
