@@ -1,8 +1,8 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -15,11 +15,29 @@ import (
 )
 
 var (
-	guacdAddr = "127.0.0.1:4822"
+	certPath    string
+	certKeyPath string
+	guacdAddr   = "127.0.0.1:4822"
 )
 
 func main() {
 	logrus.SetLevel(logrus.DebugLevel)
+
+	if os.Getenv("CERT_PATH") != "" {
+		certPath = os.Getenv("CERT_PATH")
+	}
+
+	if os.Getenv("CERT_KEY_PATH") != "" {
+		certKeyPath = os.Getenv("CERT_KEY_PATH")
+	}
+
+	if certPath != "" && certKeyPath == "" {
+		logrus.Fatal("You must set the CERT_KEY_PATH environment variable to specify the full path to the certificate keyfile")
+	}
+
+	if certPath == "" && certKeyPath != "" {
+		logrus.Fatal("You must set the CERT_PATH environment variable to specify the full path to the certificate file")
+	}
 
 	if os.Getenv("GUACD_ADDRESS") != "" {
 		guacdAddr = os.Getenv("GUACD_ADDRESS")
@@ -62,7 +80,21 @@ func main() {
 		}
 	})
 
-	logrus.Println("Serving on http://0.0.0.0:4567")
+	tlsCfg := tls.Config{}
+	if certPath != "" {
+		cert, err := tls.LoadX509KeyPair(certPath, certKeyPath)
+		if err != nil {
+			logrus.Fatalf("Unable to load certificate keypair: %s\n", err)
+		}
+
+		tlsCfg.MinVersion = tls.VersionTLS13
+		tlsCfg.Certificates = []tls.Certificate{cert}
+		tlsCfg.CurvePreferences = []tls.CurveID{
+			tls.X25519,
+			tls.CurveP256,
+			tls.CurveP384,
+		}
+	}
 
 	s := &http.Server{
 		Addr:           "0.0.0.0:4567",
@@ -70,10 +102,23 @@ func main() {
 		ReadTimeout:    guac.SocketTimeout,
 		WriteTimeout:   guac.SocketTimeout,
 		MaxHeaderBytes: 1 << 20,
+		TLSConfig:      &tlsCfg,
 	}
-	err := s.ListenAndServe()
-	if err != nil {
-		fmt.Println(err)
+
+	if certPath != "" {
+		logrus.Println("Serving on https://0.0.0.0:4567")
+
+		err := s.ListenAndServeTLS("", "")
+		if err != nil {
+			logrus.Fatal(err)
+		}
+	} else {
+		logrus.Println("Serving on http://0.0.0.0:4567")
+
+		err := s.ListenAndServe()
+		if err != nil {
+			logrus.Fatal(err)
+		}
 	}
 }
 
