@@ -3,11 +3,11 @@ package main
 import (
 	"crypto/tls"
 	"encoding/json"
-	"flag"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 
 	"github.com/sirupsen/logrus"
@@ -15,21 +15,32 @@ import (
 )
 
 var (
-	certPthFlg    = flag.String("certfile-path", "", "Full path to the certificate file for a secure server")
-	certKeyPthFlg = flag.String("keyfile-path", "", "Full path to the key file for a secure server")
+	certPath    string
+	certKeyPath string
+	guacdAddr   = "127.0.0.1:4822"
 )
 
 func main() {
-	flag.Parse()
-
 	logrus.SetLevel(logrus.DebugLevel)
 
-	if *certPthFlg != "" && *certKeyPthFlg == "" {
-		logrus.Fatal("You must specify a path to the certificate keyfile")
+	if os.Getenv("CERT_PATH") != "" {
+		certPath = os.Getenv("CERT_PATH")
 	}
 
-	if *certPthFlg == "" && *certKeyPthFlg != "" {
-		logrus.Fatal("You must specify a path to the certificate file")
+	if os.Getenv("CERT_KEY_PATH") != "" {
+		certKeyPath = os.Getenv("CERT_KEY_PATH")
+	}
+
+	if certPath != "" && certKeyPath == "" {
+		logrus.Fatal("You must set the CERT_KEY_PATH environment variable to specify the full path to the certificate keyfile")
+	}
+
+	if certPath == "" && certKeyPath != "" {
+		logrus.Fatal("You must set the CERT_PATH environment variable to specify the full path to the certificate file")
+	}
+
+	if os.Getenv("GUACD_ADDRESS") != "" {
+		guacdAddr = os.Getenv("GUACD_ADDRESS")
 	}
 
 	servlet := guac.NewServer(DemoDoConnect)
@@ -70,8 +81,8 @@ func main() {
 	})
 
 	tlsCfg := tls.Config{}
-	if *certPthFlg != "" {
-		cert, err := tls.LoadX509KeyPair(*certPthFlg, *certKeyPthFlg)
+	if certPath != "" {
+		cert, err := tls.LoadX509KeyPair(certPath, certKeyPath)
 		if err != nil {
 			logrus.Fatalf("Unable to load certificate keypair: %s\n", err)
 		}
@@ -94,7 +105,7 @@ func main() {
 		TLSConfig:      &tlsCfg,
 	}
 
-	if *certPthFlg != "" {
+	if certPath != "" {
 		logrus.Println("Serving on https://0.0.0.0:4567")
 
 		err := s.ListenAndServeTLS("", "")
@@ -118,7 +129,7 @@ func DemoDoConnect(request *http.Request) (guac.Tunnel, error) {
 	var query url.Values
 	if request.URL.RawQuery == "connect" {
 		// http tunnel uses the body to pass parameters
-		data, err := ioutil.ReadAll(request.Body)
+		data, err := io.ReadAll(request.Body)
 		if err != nil {
 			logrus.Error("Failed to read body ", err)
 			return nil, err
@@ -159,7 +170,11 @@ func DemoDoConnect(request *http.Request) (guac.Tunnel, error) {
 	config.AudioMimetypes = []string{"audio/L16", "rate=44100", "channels=2"}
 
 	logrus.Debug("Connecting to guacd")
-	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:4822")
+	addr, err := net.ResolveTCPAddr("tcp", guacdAddr)
+	if err != nil {
+		logrus.Errorln("error resolving guacd address", err)
+		return nil, err
+	}
 
 	conn, err := net.DialTCP("tcp", nil, addr)
 	if err != nil {
@@ -173,7 +188,10 @@ func DemoDoConnect(request *http.Request) (guac.Tunnel, error) {
 	if request.URL.Query().Get("uuid") != "" {
 		config.ConnectionID = request.URL.Query().Get("uuid")
 	}
-	logrus.Debugf("Starting handshake with %#v", config)
+
+	sanitisedCfg := config
+	sanitisedCfg.Parameters["password"] = "********"
+	logrus.Debugf("Starting handshake with %#v", sanitisedCfg)
 	err = stream.Handshake(config)
 	if err != nil {
 		return nil, err
