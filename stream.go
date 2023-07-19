@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"unicode/utf8"
 )
 
 const (
@@ -112,7 +113,15 @@ func (s *Stream) ReadSome() (instruction []byte, err error) {
 				// instruction.
 				switch terminator {
 				case ';':
-					instruction = []byte(string(s.buffer[0:i]))
+					size := 0
+					for _, r := range s.buffer[0:i] {
+						size += utf8.RuneLen(r)
+					}
+					count := 0
+					instruction = make([]byte, size, MaxGuacMessage)
+					for _, r := range s.buffer[0:i] {
+						count += utf8.EncodeRune(instruction[count:], r)
+					}
 					s.parseStart = 0
 					s.buffer = s.buffer[i:]
 					return
@@ -147,15 +156,16 @@ func (s *Stream) ReadSome() (instruction []byte, err error) {
 		if n == 0 {
 			err = ErrServer.NewError("read 0 bytes")
 		}
-		runes := []rune(string(buffer[:n]))
 
-		if cap(s.buffer)-len(s.buffer) < len(runes) {
+		if cap(s.buffer)-len(s.buffer) < utf8.RuneCount(buffer[:n]) {
 			s.Flush()
 		}
 
-		n = copy(s.buffer[len(s.buffer):cap(s.buffer)], runes)
-		// must reslice so len is changed
-		s.buffer = s.buffer[:len(s.buffer)+n]
+		for i := 0; i < n; {
+			r, size := utf8.DecodeRune(buffer[i:n])
+			s.buffer = append(s.buffer, r)
+			i += size
+		}
 	}
 }
 
